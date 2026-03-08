@@ -16,5 +16,18 @@
         "primary": "google-vertex/gemini-2.0-flash"
       }
     }
+  },
+  "skills": {
+    "allowBundled": ["gemini", "peekaboo", "sag", "agent-tools"],
+    "load": {
+      "watch": true,
+      "watchDebounceMs": 250
+    },
+    "entries": {
+      "gemini": { "enabled": true },
+      "peekaboo": { "enabled": true },
+      "sag": { "enabled": false },
+      "agent-tools": { "enabled": true }
+    }
   }
 }

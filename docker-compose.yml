@@ -18,6 +18,8 @@ services:
       - ./config/openclaw.json:/home/node/.openclaw/openclaw.json
       # Google Vertex: credentials file (create from .env or copy config/google-credentials.json.example)
       - ./config/google-credentials.json:/home/node/.openclaw/google-credentials.json:ro
+      # Agent workspace: SOUL.md, AGENTS.md, IDENTITY.md, USER.md, TOOLS.md (editable in repo)
+      - ./workspace:/home/node/.openclaw/workspace
       - ./scripts/entrypoint.sh:/entrypoint.sh:ro
     environment:
       # So root process reads config from /home/node/.openclaw (where we mount volume + config)

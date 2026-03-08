@@ -41,27 +41,35 @@ The gateway and the SDK use a shared token for auth. By default both use `dev-to
 npm run test
 ```
 
-This runs `poetry install` (if needed) and `scripts/run.py`, which (1) checks **WebSocket** and **HTTP health**, then (2) runs a **real agent interaction** via the gateway HTTP API (`POST /v1/responses`). The script sends one prompt (default: "Reply with exactly: OK Carnitas") with your token; no device pairing is required. Set `OPENCLAW_RUN_PROMPT`, `OPENCLAW_AGENT_TIMEOUT` (seconds), and `OPENCLAW_AGENT_ID` to customize. The gateway config enables `gateway.http.endpoints.responses`. Restart the gateway after changing config (`npm run stop` then `npm run start`).
+This runs `poetry install` (if needed) and `scripts/run.py`, which (1) checks **WebSocket** and **HTTP health**, then (2) runs a **real agent interaction** via the gateway HTTP API (`POST /v1/responses`). The script sends a neutral prompt (**"Say hello."**); the agent is expected to choose the **hello-world** workspace skill from context (the skill’s description says it applies when the user asks for a greeting). The test passes only if the reply mentions "hello-world", confirming the agent used that skill without being told which one. Set `OPENCLAW_RUN_PROMPT`, `OPENCLAW_AGENT_TIMEOUT` (seconds), and `OPENCLAW_AGENT_ID` to customize. The gateway config enables `gateway.http.endpoints.responses`. Restart the gateway after changing config (`npm run stop` then `npm run start`).
 
-**Expected output** when the gateway is running and credentials are configured:
+**Expected output** when the gateway is running, credentials are configured, and the workspace (with `workspace/skills/hello-world/`) is mounted:
 
 ```
 OpenClaw gateway checks:
   ✓ WebSocket: WebSocket connect.challenge received
   ✓ Health: HTTP /healthz -> 200
-  ✓ Agent: Agent replied: 'OK Carnitas'
+  ✓ Agent: Agent replied: '... hello-world ...'
 Done.
 ```
 
-Exit code is 0 on success. If the agent reply is missing or an error message, check gateway logs and `config/google-credentials.json`.
+Exit code is 0 on success. The reply must mention "hello-world" to confirm the agent selected the custom skill from context. If the agent reply is missing, an error, or doesn’t mention the skill, check gateway logs, `config/google-credentials.json`, and that the workspace is mounted.
 
 ## Project structure
 
 ```
 openclaw-agent/
 ├── config/
-│   ├── openclaw.json          # Gateway config: bind, HTTP responses, default model (google-vertex/gemini-2.0-flash)
+│   ├── openclaw.json          # Gateway config: bind, HTTP responses, default model, skills
 │   └── google-credentials.json   # Google Vertex service account JSON (gitignored; you create this)
+├── workspace/                 # Agent workspace (SOUL, identity, instructions); mounted into container
+│   ├── SOUL.md                # Agent personality, values, boundaries (loaded every session)
+│   ├── AGENTS.md              # Operating instructions and how to use memory/tools
+│   ├── IDENTITY.md            # Agent name and role
+│   ├── USER.md                # Who you are; how the agent should address you
+│   ├── TOOLS.md               # Notes on local tools/conventions
+│   ├── memory/                # Optional: daily memory logs (memory/YYYY-MM-DD.md)
+│   └── skills/                # Custom skills (override bundled); see workspace/skills/README.md
 ├── scripts/
 │   ├── entrypoint.sh          # Container entrypoint: writes auth-profiles for Vertex, optional creds from env
 │   └── run.py                 # Run by `npm run test`: WebSocket + health checks + one agent request via /v1/responses
@@ -72,7 +80,7 @@ openclaw-agent/
 ├── tests/                     # Pytest tests (gateway connection, etc.)
 ├── .env                       # Local env (gitignored): OPENCLAW_GATEWAY_TOKEN, optional GOOGLE_APPLICATION_CREDENTIALS_JSON
 ├── .env.example               # Template for .env
-├── docker-compose.yml         # OpenClaw gateway service (port 18789), volumes, env for Vertex
+├── docker-compose.yml         # OpenClaw gateway service (port 18789), volumes (config, credentials, workspace), env for Vertex
 ├── package.json               # npm scripts: start, stop, test
 ├── pyproject.toml             # Poetry: deps (openclaw-sdk), package layout, pytest
 └── poetry.lock                # Locked dependency versions
@@ -80,8 +88,9 @@ openclaw-agent/
 
 | Path | Purpose |
 |------|--------|
-| `config/openclaw.json` | Gateway config: bind address, Control UI, HTTP `/v1/responses` enabled, default model `google-vertex/gemini-2.0-flash`. |
+| `config/openclaw.json` | Gateway config: bind address, Control UI, HTTP `/v1/responses` enabled, default model `google-vertex/gemini-2.0-flash`, and `skills` (allowBundled, load, entries). |
 | `config/google-credentials.json` | Google Cloud service account JSON for Vertex (gitignored). Create this file so the gateway can call Gemini. |
+| `workspace/` | Agent workspace: **SOUL.md** (personality, values), **AGENTS.md** (instructions), **IDENTITY.md**, **USER.md**, **TOOLS.md**. Mounted into the container; edit these to shape how the agent behaves. |
 | `scripts/entrypoint.sh` | Docker entrypoint: creates `auth-profiles.json` for google-vertex when missing; optionally writes credentials from `GOOGLE_APPLICATION_CREDENTIALS_JSON`. |
 | `scripts/run.py` | Used by `npm run test`: WebSocket + health checks + one agent request via `POST /v1/responses`. |
 | `src/openclaw_agent/` | Python package: `run_agent_query()`, `run_agent_query_sync()` in `client.py`. |
@@ -134,6 +143,29 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## Workspace, SOUL, and skills
+
+The **workspace** (`workspace/`) is the agent’s context: personality, instructions, and (optionally) memory. It is mounted into the gateway container so the agent sees these files on every session.
+
+| File | Purpose |
+|------|--------|
+| **SOUL.md** | Personality, tone, values, and boundaries. Loaded at the start of every session; defines *how* the agent thinks and communicates. |
+| **AGENTS.md** | Operating instructions: how to behave, use the model, and use memory/tools. |
+| **IDENTITY.md** | Agent name and role. |
+| **USER.md** | Who you are; how the agent should address you. Edit with your preferences. |
+| **TOOLS.md** | Notes about local tools or conventions (does not enable/disable tools). |
+| **memory/** | Optional daily logs (`memory/YYYY-MM-DD.md`). |
+
+Edit **SOUL.md** and **AGENTS.md** to change the agent’s personality and behavior. Restart the gateway after editing so the next run picks up changes (or rely on the skills watcher for skill changes).
+
+**Skills** are configured in `config/openclaw.json` under `skills`:
+
+- **allowBundled** — allowlist of bundled skill names. This project allows: `gemini`, `peekaboo`, `sag`, `agent-tools`.
+- **entries** — per-skill overrides: `enabled: true/false`, `apiKey`, `env`. Currently: `gemini`, `peekaboo`, and `agent-tools` are enabled; `sag` is disabled (set `sag.enabled: true` and provide `ELEVENLABS_API_KEY` if you use it).
+- **workspace/skills/** — add custom skills here; they override bundled skills with the same name. See `workspace/skills/README.md`.
+
+See [OpenClaw skills config](https://docs.openclaw.ai/tools/skills-config).
 
 ## Configuration
 

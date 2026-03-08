@@ -65,7 +65,7 @@ async def run_agent_interaction(
     except ImportError:
         return False, "httpx not available (poetry install)"
 
-    prompt = os.environ.get("OPENCLAW_RUN_PROMPT", "Reply with exactly: OK Carnitas")
+    prompt = os.environ.get("OPENCLAW_RUN_PROMPT", "Say hello.")
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "main")
     url = f"{http_base.rstrip('/')}/v1/responses"
 
@@ -110,6 +110,12 @@ async def run_agent_interaction(
             elif content:
                 text_parts.append(str(content))
         reply = " ".join(text_parts).strip() if text_parts else "(no text in response)"
+        # When using default prompt ("Say hello."), require reply to mention the skill so we
+        # verify the agent chose the hello-world skill from context (not from being told).
+        default_prompt = "Say hello."
+        expect_skill_mention = prompt.strip().lower() == default_prompt.lower()
+        if expect_skill_mention and "hello-world" not in reply.lower():
+            return False, f"Agent replied but did not mention hello-world skill: {reply!r}"
         return True, f"Agent replied: {reply!r}"
     except httpx.TimeoutException:
         return False, "Agent request timed out"
