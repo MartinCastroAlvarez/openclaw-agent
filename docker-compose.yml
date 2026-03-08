@@ -1,0 +1,40 @@
+# Minimal OpenClaw gateway for local development.
+# The SDK connects to ws://127.0.0.1:18789 (or set OPENCLAW_GATEWAY_WS_URL)
+# See https://docs.openclaw.ai/install/docker
+
+services:
+  openclaw-gateway:
+    # Pin to pre–Vertex metadata bug (2026.3.1 regression: "Cannot convert undefined or null to object")
+    image: ghcr.io/openclaw/openclaw:2026.2.26
+    container_name: openclaw-agent-gateway
+    env_file: .env
+    user: "0:0"  # run as root so the process can write to the volume (Docker creates it as root)
+    ports:
+      - "18789:18789"
+    entrypoint: ["/entrypoint.sh"]
+    volumes:
+      - openclaw-data:/home/node/.openclaw
+      # Required when bind=lan: allow Control UI origin fallback for local dev
+      - ./config/openclaw.json:/home/node/.openclaw/openclaw.json
+      # Google Vertex: credentials file (create from .env or copy config/google-credentials.json.example)
+      - ./config/google-credentials.json:/home/node/.openclaw/google-credentials.json:ro
+      - ./scripts/entrypoint.sh:/entrypoint.sh:ro
+    environment:
+      # So root process reads config from /home/node/.openclaw (where we mount volume + config)
+      HOME: /home/node
+      # Bind to all interfaces so host can connect via port mapping (default is loopback-only)
+      OPENCLAW_GATEWAY_BIND: "lan"
+      # Token the gateway expects; SDK must send the same via OPENCLAW_GATEWAY_TOKEN
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-dev-token-local-only}
+      # Google Vertex (ADC): credentials file + project/location so gateway can use google-vertex provider
+      GOOGLE_APPLICATION_CREDENTIALS: /home/node/.openclaw/google-credentials.json
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-agnts-stage}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us}
+      GOOGLE_VERTEX_BASE_URL: https://aiplatform.googleapis.com/
+      # Workaround Vertex bug (v2026.3.1+): skip metadata parsing to avoid "Cannot convert undefined or null to object" in embedded runs
+      OPENCLAW_VERTEX_SKIP_METADATA: "1"
+    command: ["node", "openclaw.mjs", "gateway", "--allow-unconfigured", "--bind", "lan"]
+    restart: "no"
+
+volumes:
+  openclaw-data:

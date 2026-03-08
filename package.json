@@ -1,0 +1,11 @@
+{
+  "name": "openclaw-agent",
+  "version": "0.1.0",
+  "description": "OpenClaw Python client and scripts — run tests against a local OpenClaw gateway",
+  "private": true,
+  "scripts": {
+    "start": "docker compose up openclaw-gateway",
+    "stop": "docker compose down",
+    "test": "poetry install --no-interaction && OPENCLAW_GATEWAY_WS_URL=ws://127.0.0.1:18789 OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-dev-token-local-only} poetry run python scripts/run.py"
+  }
+}
